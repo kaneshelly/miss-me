@@ -1,29 +1,17 @@
-// MISS-ME — Firebase config.
-// ---------------------------------------------------------------------------
-// TODO: fill this in with YOUR Firebase project's web config to switch on
-// the cloud check (Tier 3). Until then MISS-ME works fully on-device
-// and says so plainly on the dashboard.
-//
-// How to get these values (about 5 minutes, free):
-//   1. Go to https://console.firebase.google.com and create a project.
-//   2. In the project, open Build > AI Logic and enable the Gemini API.
-//   3. Add a Web app to the project (Project settings > Your apps).
-//   4. Copy the firebaseConfig object Firebase shows you and paste it below.
-//   5. Run the dashboard from a local server (see README) and reload.
-//
-// NEVER commit real keys for a production project to a public repo.
-// These are web client keys for a demo project; keep your Firebase
-// security rules and App Check switched on, and restrict the key in
-// Google Cloud Console to your own domains when you ship.
+// MISS-ME — Firebase config. Configured 2026-11-20 for project
+// miss-me-1ed3d (Spark, no-cost). The cloud check (Tier 3) is on.
+// These are web client keys for a demo project; keep App Check
+// switched on, and restrict the key in Google Cloud Console to your
+// own domains when you ship.
 // ---------------------------------------------------------------------------
 
 export const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyCfvnzud5PVsam7OwaoHdIfgcfuG2b3mv0',
+  authDomain: 'miss-me-1ed3d.firebaseapp.com',
+  projectId: 'miss-me-1ed3d',
+  storageBucket: 'miss-me-1ed3d.firebasestorage.app',
+  messagingSenderId: '427757369746',
+  appId: '1:427757369746:web:ef61bba8a53bf01137694b',
 };
 
 // True only when every field above has been replaced with real values.
