@@ -1,0 +1,229 @@
+// MISS-ME — hybrid inference layer.
+// The routing, in order, for every event the sentry wakes up for:
+//
+//   Tier 1 — On-device deterministic scorer (shared/heuristic.js).
+//            Instant, free, private. Clear scores settle here:
+//            70+ = SUSPICIOUS, 20 or less = SAFE. Nothing leaves the device.
+//
+//   Tier 2 — On-device model (Gemini Nano via Chrome's built-in Prompt API,
+//            `LanguageModel`). Used ONLY when Tier 1 is UNCERTAIN.
+//            If Nano is available and returns a confident verdict, we stop
+//            here — still on-device, still private, still free.
+//
+//   Tier 3 — Cloud check (Firebase AI Logic, Gemini in the cloud).
+//            Used ONLY when the on-device verdict is still UNCERTAIN, and
+//            ONLY when a Firebase config has been supplied (see
+//            firebase-config.js). The cloud does NO heavy lifting: it sends
+//            back a short verdict and a suggested remedy — that is all.
+//            What reaches you is a notification and the remedy, the way a
+//            sentry wakes you in the night. Then it goes back to sleep.
+//
+// The alert is the product: MISS-ME notifies regardless of status —
+// through Do Not Disturb, while you sleep. Only airplane mode silences it.
+//
+// If no Firebase config is present, Tier 3 is skipped and the event stays
+// UNCERTAIN with a plain note: cloud not configured — treat with care.
+// The app works fully on-device with no config at all.
+//
+// Firebase AI Logic is imported and actually called at runtime in Tier 3
+// (getAI, getGenerativeModel, GoogleAIBackend, InferenceMode from
+// "firebase/ai") — it is not just named in the README.
+
+import { scoreEvent, heuristicVerdict, THRESHOLDS } from '../shared/heuristic.js';
+import { firebaseConfig, isFirebaseConfigured } from './firebase-config.js';
+
+const NANO_PROMPT = `You are a careful security triage helper. Read the message below and reply with ONLY a JSON object, no other text:
+{"verdict": "SAFE" | "SUSPICIOUS" | "UNCERTAIN", "confidence": 0-100, "reason": "one short sentence"}
+A message is SUSPICIOUS if it asks for passwords, account numbers, card details, one-time codes, or pressures the reader to act fast. SAFE if it is an ordinary message with no request for sensitive information.
+Message:
+"""`;
+
+const CLOUD_PROMPT = `You are a careful security triage helper doing a light cloud check on a message that on-device checks could not settle. Read the message below and reply with ONLY a JSON object, no other text:
+{"verdict": "SAFE" | "SUSPICIOUS" | "UNCERTAIN", "confidence": 0-100, "reason": "one short sentence", "remedy": "one short sentence telling the person what to do"}
+A message is SUSPICIOUS if it asks for passwords, account numbers, card details, one-time codes, or pressures the reader to act fast, or if it impersonates a bank, a security team, or a delivery company. SAFE if it is an ordinary message with no request for sensitive information.
+Message:
+"""`;
+
+// The suggested remedy: what the person should do. This is what the
+// notification carries — the alert plus the remedy, nothing more.
+export function remedyFor(verdict) {
+  if (verdict === 'SUSPICIOUS') {
+    return 'Do not click, reply, or send anything. Delete the message. If you already clicked, change your password from the real site or app — never from the link.';
+  }
+  if (verdict === 'UNCERTAIN') {
+    return 'Do not reply yet. Check the sender through a channel you trust, and let the sentry take a second look.';
+  }
+  return 'Nothing to do. The sentry goes back to sleep.';
+}
+
+// Pull a {"verdict": ...} object out of model output, defensively.
+function parseVerdict(text) {
+  if (!text) return null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    const obj = JSON.parse(text.slice(start, end + 1));
+    const verdict = String(obj.verdict || '').toUpperCase();
+    if (!['SAFE', 'SUSPICIOUS', 'UNCERTAIN'].includes(verdict)) return null;
+    const confidence = Math.max(0, Math.min(100, Number(obj.confidence) || 50));
+    return {
+      verdict,
+      confidence,
+      reason: String(obj.reason || ''),
+      remedy: String(obj.remedy || ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function askNano(text) {
+  // Chrome's built-in Prompt API (Gemini Nano), Chrome 139+ on desktop.
+  // Needs the Prompt API flag enabled — see README.
+  if (typeof LanguageModel === 'undefined') return null;
+  const availability = await LanguageModel.availability();
+  if (availability === 'unavailable') return null;
+  const session = await LanguageModel.create();
+  try {
+    const out = await session.prompt(NANO_PROMPT + text + '\n"""');
+    return parseVerdict(out);
+  } finally {
+    session.destroy();
+  }
+}
+
+let cloudModel = null;
+async function askCloud(text) {
+  // Firebase AI Logic — Gemini in the cloud. Only called from Tier 3.
+  const { initializeApp } = await import('firebase/app');
+  const { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } = await import('firebase/ai');
+  if (!cloudModel) {
+    const app = initializeApp(firebaseConfig);
+    const ai = getAI(app, { backend: new GoogleAIBackend() });
+    cloudModel = getGenerativeModel(ai, {
+      model: 'gemini-2.0-flash',
+      mode: InferenceMode.PREFER_IN_CLOUD,
+      inCloudParams: {
+        generationConfig: { responseMimeType: 'application/json' },
+      },
+    });
+  }
+  const result = await cloudModel.generateContent(CLOUD_PROMPT + text + '\n"""');
+  return parseVerdict(result.response.text());
+}
+
+// Triage one event. `event` is { kind, text, source, keepLocal? }.
+// `keepLocal` is set by the caller when the message contains one of
+// the user's watched names (see namewatch.js): the cloud tier is then
+// skipped entirely — a watched name never leaves the device.
+// ai.js never receives the watched-names list itself, only the message
+// being triaged, and only the message text is ever sent to the cloud.
+// Returns {
+//   verdict: 'SAFE' | 'SUSPICIOUS' | 'UNCERTAIN',
+//   route: 'ON-DEVICE' | 'CLOUD',
+//   tier: 'heuristic' | 'nano' | 'cloud' | 'unresolved',
+//   confidence, score, signals, reasons[], remedy, note, ms
+// }
+export async function triageEvent(event) {
+  const started = performance.now();
+  const text = String(event.text || '');
+  const { score, signals } = scoreEvent(text);
+  const first = heuristicVerdict(score);
+
+  // Tier 1 — deterministic on-device scorer settles clear cases.
+  if (first !== 'UNCERTAIN') {
+    return {
+      verdict: first,
+      route: 'ON-DEVICE',
+      tier: 'heuristic',
+      confidence: first === 'SUSPICIOUS' ? Math.min(99, score) : Math.max(70, 100 - score),
+      score,
+      signals,
+      reasons: signals.filter((s) => s.weight > 0).map((s) => s.label),
+      remedy: remedyFor(first),
+      note: 'Settled on-device by the deterministic scorer. Nothing left the device.',
+      ms: Math.round(performance.now() - started),
+    };
+  }
+
+  // Tier 2 — on-device model, only for uncertain events.
+  try {
+    const nano = await askNano(text);
+    if (nano && nano.verdict !== 'UNCERTAIN' && nano.confidence >= 70) {
+      return {
+        verdict: nano.verdict,
+        route: 'ON-DEVICE',
+        tier: 'nano',
+        confidence: nano.confidence,
+        score,
+        signals,
+        reasons: [nano.reason || 'On-device model verdict.'],
+        remedy: remedyFor(nano.verdict),
+        note: 'Settled on-device by Gemini Nano. Nothing left the device.',
+        ms: Math.round(performance.now() - started),
+      };
+    }
+  } catch (err) {
+    console.warn('MISS-ME: on-device model unavailable, escalating:', err);
+  }
+
+  // Tier 3 — cloud check, only when still uncertain and configured.
+  // Light by design: a short verdict and a suggested remedy, nothing more.
+  // What reaches you is the notification and the remedy.
+  // Skipped when keepLocal is set: a message carrying a watched name
+  // never leaves the device, so it stays UNCERTAIN on-device instead.
+  if (event.keepLocal) {
+    return {
+      verdict: 'UNCERTAIN',
+      route: 'ON-DEVICE',
+      tier: 'unresolved',
+      confidence: 50,
+      score,
+      signals,
+      reasons: ['This message carries one of your watched names, so the sentry kept it on-device and did not send it to the cloud.'],
+      remedy: remedyFor('UNCERTAIN'),
+      note: 'Kept on-device because it contains a watched name. Treat with care.',
+      ms: Math.round(performance.now() - started),
+    };
+  }
+  if (isFirebaseConfigured()) {
+    try {
+      const cloud = await askCloud(text);
+      if (cloud) {
+        return {
+          verdict: cloud.verdict,
+          route: 'CLOUD',
+          tier: 'cloud',
+          confidence: cloud.confidence,
+          score,
+          signals,
+          reasons: [cloud.reason || 'Cloud check verdict.'],
+          remedy: cloud.remedy || remedyFor(cloud.verdict),
+          note: 'On-device checks could not settle this, so the cloud sent back a short verdict and a suggested remedy.',
+          ms: Math.round(performance.now() - started),
+        };
+      }
+    } catch (err) {
+      console.warn('MISS-ME: cloud check failed:', err);
+    }
+  }
+
+  // No confident verdict anywhere — stay UNCERTAIN, say so plainly.
+  return {
+    verdict: 'UNCERTAIN',
+    route: 'ON-DEVICE',
+    tier: 'unresolved',
+    confidence: 50,
+    score,
+    signals,
+    reasons: ['On-device checks could not settle this.'],
+    remedy: remedyFor('UNCERTAIN'),
+    note: isFirebaseConfigured()
+      ? 'The cloud could not settle this either. Treat with care.'
+      : 'Cloud check is not configured, so this stays uncertain. Treat with care.',
+    ms: Math.round(performance.now() - started),
+  };
+}
+
+export { THRESHOLDS };

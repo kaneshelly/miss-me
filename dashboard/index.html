@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MISS-ME — My Intelligent Sentry Secures Me</title>
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "firebase/app": "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js",
+    "firebase/ai": "https://www.gstatic.com/firebasejs/12.0.0/firebase-ai.js"
+  }
+}
+</script>
+</head>
+<body>
+<header>
+  <h1>MISS-ME</h1>
+  <p class="tagline">My Intelligent Sentry Secures Me — it does its best work offline.</p>
+</header>
+
+<main>
+  <section id="status-card" class="card">
+    <div class="status-row">
+      <span id="status-dot" class="dot sleeping" aria-hidden="true"></span>
+      <span id="status-word">SLEEPING</span>
+      <span id="status-detail">The sentry is quiet. Nothing has knocked.</span>
+    </div>
+    <div class="engine-row">
+      <span>Engine: <strong id="engine-state">on-device scorer ready</strong></span>
+      <span>Cloud: <strong id="cloud-state">not configured — running fully on-device</strong></span>
+      <span>Alerts: <strong>break through Do Not Disturb. Only airplane mode silences the sentry.</strong></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Name Watch — setup</h2>
+    <p>List every variation of your name — every spelling, every way someone could search for you — and the sentry will watch for those names. The sentry will also suggest a cover name to keep your information under.</p>
+    <p class="muted">Name Watch lives on this device only. Your variants are stored in this browser and never leave it — they are never sent to the cloud, and a message carrying a watched name is never sent to the cloud either.</p>
+    <label for="variant-input">A variation of your name</label>
+    <div class="inline-row">
+      <input id="variant-input" type="text" placeholder="e.g. a nickname, a maiden name, a misspelling" autocomplete="off">
+      <button id="add-variant" type="button">Add</button>
+    </div>
+    <ul id="variant-list" class="variant-list"></ul>
+    <div id="cover-box" class="cover-box hidden">
+      <p><strong>Suggested cover name:</strong> <span id="cover-suggestion"></span></p>
+      <div class="button-row">
+        <button id="use-cover" type="button" class="ghost">Use this cover name</button>
+        <button id="new-cover" type="button" class="ghost">Suggest another</button>
+      </div>
+      <label for="cover-input">Or type your own cover name</label>
+      <div class="inline-row">
+        <input id="cover-input" type="text" placeholder="Your cover name" autocomplete="off">
+        <button id="save-cover" type="button">Save</button>
+      </div>
+      <p class="muted" id="cover-status"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Trip the sentry</h2>
+    <p>Paste a message — a text, an email, a prompt asking for personal details — and watch the sentry wake up, triage it on-device, and only call the cloud when it cannot settle it.</p>
+    <label for="probe-text">Message to check</label>
+    <textarea id="probe-text" rows="5" placeholder="Paste a suspicious message here…"></textarea>
+    <div class="button-row">
+      <button id="analyze-btn" type="button">Wake the sentry</button>
+      <button id="sample-phish" type="button" class="ghost">Sample: phishing text</button>
+      <button id="sample-legit" type="button" class="ghost">Sample: ordinary text</button>
+      <button id="sample-grey" type="button" class="ghost">Sample: hard to call</button>
+    </div>
+    <div id="verdict" class="verdict hidden" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>Simulate a page trigger</h2>
+    <p>The extension watches real pages for the same triggers. Fire one here to see the same path run.</p>
+    <div class="button-row">
+      <button id="sim-password" type="button" class="ghost">Password field on an unsecured page</button>
+      <button id="sim-form" type="button" class="ghost">Form asking for card details</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Event log</h2>
+    <p class="muted">Every event the sentry woke for, newest first. Stored only in this browser.</p>
+    <ol id="event-log" class="event-log"></ol>
+    <div class="button-row">
+      <button id="clear-log" type="button" class="ghost">Clear log</button>
+    </div>
+  </section>
+
+  <section class="card how">
+    <h2>How the sentry decides</h2>
+    <ol>
+      <li><strong>On-device scorer</strong> — instant, free, private. Clear threats (score 70+) and clear safe messages (score 20 or less) settle here. Nothing leaves the device.</li>
+      <li><strong>On-device model</strong> — Gemini Nano in Chrome, only when the score is in between. A confident verdict here still never leaves the device.</li>
+      <li><strong>Cloud check</strong> — Firebase AI Logic (Gemini in the cloud), only when the on-device verdict is still uncertain, and only when a Firebase config is filled in. The cloud does no heavy lifting: it sends back a short verdict and a suggested remedy. What reaches you is the notification and the remedy — a light in the dark, a sound that breaks through Do Not Disturb. Then it sleeps again.</li>
+    </ol>
+    <p class="muted">No cloud config? The sentry still works — uncertain events stay uncertain and are flagged for you, never silently passed.</p>
+  </section>
+</main>
+
+<footer>
+  <p>MISS-ME v0.1.0 — the sentry slice. Open source under Apache-2.0.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

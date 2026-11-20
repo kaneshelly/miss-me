@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 340px; margin: 0; padding: 12px; font-family: system-ui, sans-serif; background: #0e1512; color: #e8f0ea; }
+  h1 { font-size: 1.1rem; margin: 0 0 2px; letter-spacing: 0.05em; }
+  .sub { color: #9db3a4; font-size: 0.8rem; margin: 0 0 10px; }
+  .status { font-weight: 700; margin-bottom: 10px; }
+  .status .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #4ade80; margin-right: 6px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { border-top: 1px solid #2a3d33; padding: 8px 0; font-size: 0.85rem; }
+  li .muted { color: #9db3a4; font-size: 0.75rem; }
+  .badge { display: inline-block; font-size: 0.65rem; font-weight: 800; border-radius: 999px; padding: 1px 7px; margin-left: 4px; }
+  .badge.on-device { background: #4ade80; color: #0b120e; }
+  .badge.cloud { background: #60a5fa; color: #0b120e; }
+  .empty { color: #9db3a4; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button { flex: 1; cursor: pointer; border: 1px solid #2a3d33; background: transparent; color: #e8f0ea; border-radius: 8px; padding: 7px; font-weight: 600; }
+  a { color: #4ade80; }
+  .nw { border-top: 1px solid #2a3d33; margin-top: 10px; padding-top: 10px; }
+  .nw h2 { font-size: 0.95rem; margin: 0 0 4px; }
+  .nw p { font-size: 0.75rem; margin: 0 0 8px; }
+  .nw-row { display: flex; gap: 6px; }
+  .nw-row input { flex: 1; background: #0b120e; color: #e8f0ea; border: 1px solid #2a3d33; border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 0.85rem; min-width: 0; }
+  .nw-row button { flex: none; }
+  #nw-list li { display: flex; gap: 6px; align-items: center; }
+  #nw-list li span { flex: 1; }
+  #nw-list button { flex: none; padding: 2px 8px; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+  <h1>MISS-ME</h1>
+  <p class="sub">My Intelligent Sentry Secures Me</p>
+  <div class="status"><span class="dot"></span><span id="status-text">SLEEPING — nothing has knocked.</span></div>
+  <ul id="event-list"></ul>
+  <div class="nw">
+    <h2>Name Watch</h2>
+    <p class="muted">Names the sentry watches for. Stored on this device only — never sent anywhere.</p>
+    <div class="nw-row">
+      <input id="nw-input" type="text" placeholder="A variation of your name">
+      <button id="nw-add" type="button">Add</button>
+    </div>
+    <ul id="nw-list"></ul>
+    <p id="nw-cover-line" class="muted"></p>
+    <div class="row">
+      <button id="nw-use-cover" type="button">Use suggested cover name</button>
+    </div>
+  </div>
+  <div class="row">
+    <button id="clear-btn" type="button">Clear log</button>
+    <button id="repo-btn" type="button">About MISS-ME</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
