@@ -97,9 +97,24 @@ let cloudModel = null;
 async function askCloud(text) {
   // Firebase AI Logic — Gemini in the cloud. Only called from Tier 3.
   const { initializeApp } = await import('firebase/app');
+  const { initializeAppCheck, ReCaptchaV3Provider } = await import('firebase/app-check');
   const { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } = await import('firebase/ai');
   if (!cloudModel) {
     const app = initializeApp(firebaseConfig);
+    // App Check — required by the hackathon, and Firebase AI Logic
+    // enforces it on this project, so the cloud check would be blocked
+    // without it. The reCAPTCHA v3 site key is public by design (it
+    // ships in client code); the secret key lives only in the console.
+    // Local testing uses a debug token: the SDK prints it to the
+    // console — register it in the Firebase console under App Check.
+    // The hosted app uses real reCAPTCHA v3 attestation.
+    if (typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider('6Lcz3CouAAAAAGqqa8nDsTJ_KguJ5LzGoU5f4TNl'),
+      isTokenAutoRefreshEnabled: true,
+    });
     const ai = getAI(app, { backend: new GoogleAIBackend() });
     cloudModel = getGenerativeModel(ai, {
       model: 'gemini-2.0-flash',

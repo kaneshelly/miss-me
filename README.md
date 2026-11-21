@@ -114,6 +114,8 @@ Then open http://localhost:8000/dashboard/ in Chrome.
 
 The dashboard calls Firebase AI Logic at runtime (`getAI`, `getGenerativeModel`, `GoogleAIBackend`, `InferenceMode` from `firebase/ai`) only for Tier 3 checks. Never commit real keys for a production project to a public repo; keep App Check on and restrict the key to your own domains when you ship.
 
+**App Check** is registered for this project (web app "MISS-ME dashboard", reCAPTCHA v3, provider shown as Fraud Defense in the current console; site key `6Lcz3CouAAAAAGqqa8nDsTJ_KguJ5LzGoU5f4TNl`). The dashboard initializes it in `ai.js` before the first cloud call — Firebase AI Logic enforces it, so Tier 3 would be blocked without it. Enforcement is off for the other APIs; local testing uses a debug token (the SDK prints it to the console — register it in the Firebase console under App Check).
+
 ## Demo script (for the video, about 90 seconds)
 
 The opening is the scene, and it can be generated footage with narration — it doesn't have to feature anyone. The rest is real screen footage of MISS-ME working (the rules require footage of the project functioning).
