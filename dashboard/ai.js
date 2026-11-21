@@ -29,7 +29,7 @@
 // (getAI, getGenerativeModel, GoogleAIBackend, InferenceMode from
 // "firebase/ai") — it is not just named in the README.
 
-import { scoreEvent, heuristicVerdict, THRESHOLDS } from '../shared/heuristic.js';
+import { scoreEvent, heuristicVerdict, THRESHOLDS } from './heuristic.js';
 import { firebaseConfig, isFirebaseConfigured } from './firebase-config.js';
 
 const NANO_PROMPT = `You are a careful security triage helper. Read the message below and reply with ONLY a JSON object, no other text:
