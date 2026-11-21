@@ -297,6 +297,7 @@ export async function triageEvent(event) {
       ms: Math.round(performance.now() - started),
     };
   }
+  let cloudError = null;
   if (isFirebaseConfigured()) {
     try {
       const cloud = await askCloud(text);
@@ -315,6 +316,10 @@ export async function triageEvent(event) {
         };
       }
     } catch (err) {
+      // The reason is shown on the verdict, not just the console, so a
+      // failed cloud check is diagnosable in any browser (the message
+      // carries no secrets — it is the SDK's own error text, capped).
+      cloudError = err && err.message ? String(err.message).slice(0, 140) : 'unknown error';
       console.warn('MISS-ME: cloud check failed:', err);
     }
   }
@@ -330,7 +335,7 @@ export async function triageEvent(event) {
     reasons: ['On-device checks could not settle this.'],
     remedy: remedyFor('UNCERTAIN'),
     note: isFirebaseConfigured()
-      ? 'The cloud could not settle this either. Treat with care.'
+      ? 'The cloud could not settle this either. Treat with care.' + (cloudError ? ' (Cloud check failed: ' + cloudError + ')' : '')
       : 'Cloud check is not configured, so this stays uncertain. Treat with care.',
     ms: Math.round(performance.now() - started),
   };
