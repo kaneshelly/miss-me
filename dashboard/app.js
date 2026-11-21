@@ -1,7 +1,7 @@
 // MISS-ME dashboard — wiring for the sentry demo.
 // The triage itself lives in ai.js; this file only drives the page.
 
-import { triageEvent } from './ai.js';
+import { triageEvent } from './ai-0.2.2.js';
 import { isFirebaseConfigured } from './firebase-config.js';
 import {
   loadWatch,
@@ -251,7 +251,16 @@ $('storm-btn').addEventListener('click', () => {
 // the Gray Code: your real names hidden among about a hundred decoy
 // names, verifiable only on this device. `loadWatch` resolves the real
 // ones at startup; the UI shows only your real list.
-const watch = await loadWatch();
+// The sentry must never brick itself on a storage failure: if the
+// Name Watch store cannot load (storage blocked, crypto unavailable),
+// the dashboard still runs — Name Watch just starts empty this session.
+let watch;
+try {
+  watch = await loadWatch();
+} catch (err) {
+  console.warn('MISS-ME: Name Watch store unavailable, starting empty:', err);
+  watch = { variants: [], coverName: '', places: [], nameEntryCount: 0, placeEntryCount: 0 };
+}
 let nameWatch = { variants: watch.variants, coverName: watch.coverName };
 let nameEntryCount = watch.nameEntryCount;
 let places = watch.places;
