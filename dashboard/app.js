@@ -1,7 +1,7 @@
 // MISS-ME dashboard — wiring for the sentry demo.
 // The triage itself lives in ai.js; this file only drives the page.
 
-import { triageEvent } from './ai-0.2.2.js';
+import { triageEvent } from './ai-0.2.3.js';
 import { isFirebaseConfigured } from './firebase-config.js';
 import {
   loadWatch,
