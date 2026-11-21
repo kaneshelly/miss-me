@@ -27,6 +27,9 @@
   #nw-list li { display: flex; gap: 6px; align-items: center; }
   #nw-list li span { flex: 1; }
   #nw-list button { flex: none; padding: 2px 8px; font-size: 0.75rem; }
+  #pl-list li { display: flex; gap: 6px; align-items: center; }
+  #pl-list li span { flex: 1; }
+  #pl-list button { flex: none; padding: 2px 8px; font-size: 0.75rem; }
 </style>
 </head>
 <body>
@@ -36,21 +39,34 @@
   <ul id="event-list"></ul>
   <div class="nw">
     <h2>Name Watch</h2>
-    <p class="muted">Names the sentry watches for. Stored on this device only — never sent anywhere.</p>
+    <p class="muted">People the sentry guards — your name, family, clients. Up to 50 at a time. Stored on this device only — never sent anywhere.</p>
     <div class="nw-row">
       <input id="nw-input" type="text" placeholder="A variation of your name">
       <button id="nw-add" type="button">Add</button>
     </div>
     <ul id="nw-list"></ul>
+    <p id="nw-hidden-line" class="muted"></p>
     <p id="nw-cover-line" class="muted"></p>
     <div class="row">
       <button id="nw-use-cover" type="button">Use suggested cover name</button>
     </div>
   </div>
+  <div class="nw">
+    <h2>My places</h2>
+    <p class="muted">Where your name and your money meet. Stored on this device only — never sent anywhere.</p>
+    <div class="nw-row">
+      <input id="pl-input" type="text" placeholder="Your bank, your email provider">
+      <button id="pl-add" type="button">Add</button>
+    </div>
+    <ul id="pl-list"></ul>
+    <p id="pl-hidden-line" class="muted"></p>
+  </div>
   <div class="row">
     <button id="clear-btn" type="button">Clear log</button>
     <button id="repo-btn" type="button">About MISS-ME</button>
   </div>
+  <script src="decoys.js"></script>
+  <script src="syllables.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

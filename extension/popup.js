@@ -54,9 +54,9 @@ render();
 // ---- Name Watch setup -----------------------------------------------------
 // Same storage key and shape as the dashboard (dashboard/namewatch.js).
 // Variants live in this browser's local extension storage only — they are
-// never sent anywhere. The cover-name list mirrors dashboard/namewatch.js;
-// keep the two in sync.
-
+// never sent anywhere. The stored list is the Gray Code: real variants
+// hidden among about a hundred decoy names, verifiable only on this
+// device. The popup shows only the real list.
 const NW_KEY = 'missme.namewatch.v1';
 const COVER_NAMES = [
   'Alex Rivers',
@@ -82,18 +82,44 @@ function nwSuggest(seed) {
 }
 
 let nwState = { variants: [], coverName: '' };
+let nwEntryCount = 0;
 
 async function nwLoad() {
   const stored = await chrome.storage.local.get(NW_KEY);
   const data = stored[NW_KEY] || {};
-  nwState = {
-    variants: Array.isArray(data.variants) ? data.variants : [],
-    coverName: typeof data.coverName === 'string' ? data.coverName : '',
-  };
+  if (Array.isArray(data.entries)) {
+    const key = await MissMeDecoys.getOrCreateDeviceKey();
+    if (data.entries.length > 0 && Array.isArray(data.entries[0].p)) {
+      nwState = {
+        variants: await MissMeSyllables.reassembleSyllables(data.entries, key),
+        coverName: typeof data.coverName === 'string' ? data.coverName : '',
+      };
+      nwEntryCount = data.entries.length;
+    } else {
+      // Old whole-word shape — migrate to syllables.
+      nwState = {
+        variants: data.entries.map((e) => (typeof e === 'string' ? e : e.v)),
+        coverName: typeof data.coverName === 'string' ? data.coverName : '',
+      };
+      nwEntryCount = await nwSave();
+    }
+  } else if (Array.isArray(data.variants)) {
+    nwState = {
+      variants: data.variants,
+      coverName: typeof data.coverName === 'string' ? data.coverName : '',
+    };
+    nwEntryCount = await nwSave();
+  } else {
+    nwState = { variants: [], coverName: '' };
+    nwEntryCount = 0;
+  }
 }
 
 async function nwSave() {
-  await chrome.storage.local.set({ [NW_KEY]: nwState });
+  const key = await MissMeDecoys.getOrCreateDeviceKey();
+  const entries = await MissMeSyllables.mixSyllableStore(nwState.variants, MissMeDecoys.DECOY_NAMES, key);
+  await chrome.storage.local.set({ [NW_KEY]: { entries, coverName: nwState.coverName } });
+  return entries.length;
 }
 
 function nwRender() {
@@ -111,7 +137,7 @@ function nwRender() {
       btn.textContent = 'Remove';
       btn.addEventListener('click', async () => {
         nwState.variants = nwState.variants.filter((x) => x !== v);
-        await nwSave();
+        nwEntryCount = await nwSave();
         nwRender();
       });
       li.appendChild(span);
@@ -130,6 +156,10 @@ function nwRender() {
       ? `Cover name in use: ${nwState.coverName}.`
       : `Suggested cover name: ${nwSuggest(nwState.variants[0])}.`;
   }
+  document.getElementById('nw-hidden-line').textContent =
+    nwEntryCount > 0
+      ? `Hidden among ${nwEntryCount} syllable fragments in the store — only this device can tell which are yours.`
+      : '';
 }
 
 document.getElementById('nw-add').addEventListener('click', async () => {
@@ -141,7 +171,7 @@ document.getElementById('nw-add').addEventListener('click', async () => {
   }
   if (!nwState.variants.includes(v)) {
     nwState.variants.push(v);
-    await nwSave();
+    nwEntryCount = await nwSave();
   }
   input.value = '';
   nwRender();
@@ -151,8 +181,96 @@ document.getElementById('nw-add').addEventListener('click', async () => {
 document.getElementById('nw-use-cover').addEventListener('click', async () => {
   if (nwState.variants.length === 0) return;
   nwState.coverName = nwSuggest(nwState.variants[0]);
-  await nwSave();
+  nwEntryCount = await nwSave();
   nwRender();
 });
 
 nwLoad().then(nwRender);
+
+// ---- My places setup ------------------------------------------------------
+// Same storage key and shape as the dashboard (dashboard/namewatch.js).
+// Places live in this browser's local extension storage only — they are
+// never sent anywhere. The stored list is the Gray Code: real places
+// hidden among about a hundred decoy banks and portals, verifiable only
+// on this device. The popup shows only the real list.
+
+const PL_KEY = 'missme.places.v1';
+
+let plPlaces = [];
+let plEntryCount = 0;
+
+async function plLoad() {
+  const stored = await chrome.storage.local.get(PL_KEY);
+  const data = stored[PL_KEY];
+  if (data && Array.isArray(data.entries)) {
+    const key = await MissMeDecoys.getOrCreateDeviceKey();
+    if (data.entries.length > 0 && Array.isArray(data.entries[0].p)) {
+      plPlaces = await MissMeSyllables.reassembleSyllables(data.entries, key);
+      plEntryCount = data.entries.length;
+    } else {
+      // Old whole-word shape — migrate to syllables.
+      plPlaces = data.entries.map((e) => (typeof e === 'string' ? e : e.v));
+      plEntryCount = await plSave();
+    }
+  } else if (Array.isArray(data)) {
+    plPlaces = data;
+    plEntryCount = await plSave();
+  } else {
+    plPlaces = [];
+    plEntryCount = 0;
+  }
+}
+
+async function plSave() {
+  const key = await MissMeDecoys.getOrCreateDeviceKey();
+  const entries = await MissMeSyllables.mixSyllableStore(plPlaces, MissMeDecoys.DECOY_PLACES, key);
+  await chrome.storage.local.set({ [PL_KEY]: { entries } });
+  return entries.length;
+}
+
+function plRender() {
+  const list = document.getElementById('pl-list');
+  list.innerHTML = '';
+  if (plPlaces.length === 0) {
+    list.innerHTML = '<li class="empty">No places yet.</li>';
+  } else {
+    for (const v of plPlaces) {
+      const li = document.createElement('li');
+      const span = document.createElement('span');
+      span.textContent = v;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Remove';
+      btn.addEventListener('click', async () => {
+        plPlaces = plPlaces.filter((x) => x !== v);
+        plEntryCount = await plSave();
+        plRender();
+      });
+      li.appendChild(span);
+      li.appendChild(btn);
+      list.appendChild(li);
+    }
+  }
+  document.getElementById('pl-hidden-line').textContent =
+    plEntryCount > 0
+      ? `Hidden among ${plEntryCount} syllable fragments in the store — only this device can tell which are yours.`
+      : '';
+}
+
+document.getElementById('pl-add').addEventListener('click', async () => {
+  const input = document.getElementById('pl-input');
+  const v = input.value.trim().replace(/\s+/g, ' ');
+  if (v.length < 2) {
+    input.focus();
+    return;
+  }
+  if (!plPlaces.includes(v)) {
+    plPlaces.push(v);
+    plEntryCount = await plSave();
+  }
+  input.value = '';
+  plRender();
+  input.focus();
+});
+
+plLoad().then(plRender);

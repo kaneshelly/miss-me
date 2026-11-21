@@ -28,13 +28,17 @@ miss-me/
 │   ├── styles.css
 │   ├── app.js            Page wiring
 │   ├── ai.js             The hybrid inference layer (the three tiers)
-│   ├── namewatch.js      Name Watch: watched names + cover-name suggestion
+│   ├── namewatch.js      Name Watch + My places: watched names, cover names, watched places
+│   ├── decoys.js         Gray Code: decoy pools, keyed salts, device key
+│   ├── syllables.js      Gray Code, second layer: syllables, binary lattice positions, reassembly
 │   └── firebase-config.js  Placeholder config — fill in yours (see below)
 ├── extension/            Chrome extension (Manifest V3)
 │   ├── manifest.json
 │   ├── background.js     The sentry: sleeps until a trigger arrives
 │   ├── content.js        The tripwire: watches pages for triggers
 │   ├── triage.js         On-device triage (scorer + Nano), extension build
+│   ├── decoys.js         Gray Code (extension build)
+│   ├── syllables.js      Gray Code syllables (extension build)
 │   ├── popup.html / popup.js   What the sentry has caught
 ├── shared/
 │   └── heuristic.js      The deterministic scorer (dashboard build)
@@ -50,11 +54,35 @@ miss-me/
 
 ## Name Watch (setup)
 
-On the dashboard, **Name Watch** is the first setup step. List every variation of your name — every spelling, every way someone could search for you — and the sentry will watch for those names. The sentry will also suggest a cover name to keep your information under, picked from a small built-in list (or type your own instead).
+On the dashboard, **Name Watch** is the first setup step. List the people the sentry guards — your name in every variation, and anyone else you protect: family, clients. The roster holds 50 people at a time, and if someone tries to get into any of their information, it gets flagged. The sentry will also suggest a cover name to keep your information under, picked from a small built-in list (or type your own instead).
 
 **Name Watch lives on this device only.** Your variants are stored in the browser (dashboard) or the extension's local storage, and never leave the device. They are never sent to the cloud, and a message carrying a watched name is never sent to the cloud either — the sentry keeps it on-device and flags it there. In the extension, a page mentioning a watched name fires a `name-watch` trigger; the name itself is never put in the event record.
 
+## My places
+
+The sentry cannot defend the bank's front door — that door is the bank's, not ours, and the sentry does not see it. So it defends the cues instead. In **My places**, you tell the sentry where you live online: your bank, your email, anywhere your name and your money meet.
+
+The sentry checks in order: it sees your name first, then it sees where the cue is trying to find you.
+
+- **Your name + one of your places** — the writer is privy to real information about you, because they know where you really are. That gets flagged: the verdict is UNCERTAIN with one remedy — open the real app, or type the real address yourself, and check there. Never tap the link.
+- **Your name + a place you do NOT use** — the writer is looking for you somewhere you are not located, so they do not actually know you. That is a low-risk flag: logged, nothing to do, no alarm.
+- **A clear threat** keeps its SUSPICIOUS verdict either way, and gains the place note so you know what it was reaching for.
+
+**My places live on this device only, under their own store, separate from the names list.** The two halves of the match never sit in the same store, so one breach cannot hand over name-plus-place together. A message that matches your name and a place never goes to the cloud — it is forced on-device-only. In the extension, a page mentioning your name together with one of your places fires a `place-match` trigger; a page mentioning your name next to a well-known place you do not use fires a `place-low-risk` trigger. Neither the name nor the place is ever put in the event record.
+
 The same setup lives in the extension popup, so the extension watches with the same list.
+
+## The Gray Code
+
+The sentry's own store is built to survive being hacked. At setup — inception — you tell it your real names and places. The app then auto-generates decoys, about a hundred entries that look exactly like the real ones, and saves everything together as one flat snapshot clone: every entry the same shape, no timestamps, no add-order, no history. Your real entries are hidden in there, gray-coded.
+
+After inception comes separation: by the time the app is operating, all pertinent information about how the store was built has been discarded. There is no log of what you typed and what the app generated, no order to read, no chain to run down. An intruder who opens the store sees fifty banks and fifty people, all random — they have hacked an operating system, not an information system. There is data in it and no information.
+
+The sentry still knows who it is guarding — by grayscale, by algorithm. Each real entry carries a salt that is a keyed hash of the entry (SHA-256 of the device key + the entry); each decoy carries a random salt. Only this device holds the key, so only this device can run the check. The key lives in its own store, separate from the entries. Decoys are also built by recombining your own words with pool words, so even your own surname is gray-coded — "Michael Kelley" hides among "Michael Smith" and "James Kelley" as well as among the hundred people.
+
+**Syllables on the lattice (second layer).** A real name or place is not stored whole at all. It is broken into syllables — "Michael Kelley" becomes "Mic", "hael", "Kel", "ley" — and each syllable lives at its own binary position on the lattice, a tuple like (1,0,1,1,0,0,1,0,1,0). The position comes from a keyed permutation seeded by the device key, so only the key knows which syllables belong together and in what order; there is no map stored anywhere. Each syllable entry carries a keyed salt (SHA-256 of key + syllable + position), and decoys carry random salts at random unused positions. At load, the sentry verifies the salts, inverts the permutation, groups the syllables by name, orders them, and joins them back — a name with a gap (a tampered or missing syllable) is dropped, never guessed. One lattice point alone gives an attacker a fragment, not a name.
+
+Two honest limits. First, this is camouflage, not encryption: it makes the real entries indistinguishable at a glance and breaks any chain back to how the store was built, but it does not protect the store if the device itself is fully compromised and both stores are taken together. Second, the decoy pools ship in the public repo; the recombination decoys above are what keep your own words from standing out by elimination.
 
 ## Run the dashboard
 

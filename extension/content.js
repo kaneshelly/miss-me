@@ -9,15 +9,48 @@
   const fired = new Set();
 
   // Watched names, loaded from the extension's own local storage.
-  // Mirrors dashboard/namewatch.js — the matching rule is the same.
-  // The variants never leave this device; only the trigger kind is
-  // reported, never the name that matched.
+  // The stored list is the Gray Code (see decoys.js): real variants
+  // hidden among about a hundred decoy names. Only this device's key
+  // can tell real from decoy, so the content script verifies the store
+  // before matching — the name that matched is never reported, only the
+  // trigger kind.
   const NAME_WATCH_KEY = 'missme.namewatch.v1';
   let watchedVariants = [];
-  chrome.storage.local.get(NAME_WATCH_KEY).then((stored) => {
-    const data = stored[NAME_WATCH_KEY];
-    if (data && Array.isArray(data.variants)) watchedVariants = data.variants;
-  });
+  // My places, loaded the same way. The sentry watches for a watched
+  // name and a watched place appearing TOGETHER — any cue that puts
+  // your name together with your bank. The places list never leaves
+  // this device; only the trigger kind is reported, never the name or
+  // the place that matched.
+  const PLACES_KEY = 'missme.places.v1';
+  let watchedPlaces = [];
+
+  async function loadWatch() {
+    const key = await MissMeDecoys.getOrCreateDeviceKey();
+    const stored = await chrome.storage.local.get([NAME_WATCH_KEY, PLACES_KEY]);
+    const nameData = stored[NAME_WATCH_KEY];
+    if (nameData && Array.isArray(nameData.entries)) {
+      watchedVariants =
+        nameData.entries.length > 0 && Array.isArray(nameData.entries[0].p)
+          ? await MissMeSyllables.reassembleSyllables(nameData.entries, key)
+          : nameData.entries.map((e) => (typeof e === 'string' ? e : e.v));
+    } else if (nameData && Array.isArray(nameData.variants)) {
+      watchedVariants = nameData.variants; // old plain shape — the popup migrates it on open
+    }
+    const placeData = stored[PLACES_KEY];
+    if (placeData && Array.isArray(placeData.entries)) {
+      watchedPlaces =
+        placeData.entries.length > 0 && Array.isArray(placeData.entries[0].p)
+          ? await MissMeSyllables.reassembleSyllables(placeData.entries, key)
+          : placeData.entries.map((e) => (typeof e === 'string' ? e : e.v));
+    } else if (Array.isArray(placeData)) {
+      watchedPlaces = placeData; // old plain shape — the popup migrates it on open
+    }
+  }
+
+  loadWatch();
+  // If the user edits the lists in the popup while a page is open, the
+  // sentry on this page reloads its watch.
+  chrome.storage.onChanged.addListener(() => loadWatch());
 
   function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -31,6 +64,66 @@
       if (v.length <= 3) {
         if (new RegExp(`\\b${escapeRegExp(v)}\\b`, 'i').test(input)) return true;
       } else if (input.toLowerCase().includes(v.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function matchesWatchedPlace(text) {
+    const input = String(text || '');
+    for (const raw of watchedPlaces) {
+      const v = String(raw || '').trim().replace(/\s+/g, ' ');
+      if (v.length < 2) continue;
+      if (v.length <= 3) {
+        if (new RegExp(`\\b${escapeRegExp(v)}\\b`, 'i').test(input)) return true;
+      } else if (input.toLowerCase().includes(v.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Well-known banks and financial words, built in. Mirrors
+  // dashboard/namewatch.js and extension/triage.js — keep the three
+  // copies in sync. A watched name next to one of these, where the
+  // place is NOT one of the user's places, is a low-risk flag: the
+  // writer is looking for the user somewhere they are not located.
+  const KNOWN_PLACE_WORDS = [
+    'Capital One',
+    'Chase',
+    'Bank of America',
+    'Wells Fargo',
+    'Citibank',
+    'Citi',
+    'US Bank',
+    'PNC',
+    'Truist',
+    'TD Bank',
+    'American Express',
+    'Amex',
+    'Discover',
+    'Navy Federal',
+    'USAA',
+    'Ally Bank',
+    'Marcus',
+    'SoFi',
+    'PayPal',
+    'Venmo',
+    'Cash App',
+    'Zelle',
+    'credit union',
+    'crypto exchange',
+  ];
+
+  function matchesKnownPlaceWord(text) {
+    const input = String(text || '');
+    const own = watchedPlaces.map((p) => String(p || '').trim().toLowerCase());
+    for (const w of KNOWN_PLACE_WORDS) {
+      if (own.includes(w.toLowerCase())) continue;
+      if (w.length <= 3) {
+        if (new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(input)) return true;
+      } else if (input.toLowerCase().includes(w.toLowerCase())) {
         return true;
       }
     }
@@ -103,6 +196,34 @@
       report(
         'name-watch',
         'This page mentions one of the names the sentry is watching for.',
+      );
+    }
+
+    // Trigger 5: the page mentions one of the watched names TOGETHER
+    // with one of the user's places (My places setup) — any cue that
+    // puts your name together with your bank. Only the trigger is
+    // reported — never the name, never the place, and never any page
+    // content.
+    if (matchesWatchedName(bodyText) && matchesWatchedPlace(bodyText)) {
+      report(
+        'place-match',
+        'This page connects one of the names the sentry watches for with one of the places where your name and your money meet. Check it through the real app — never tap a link here.',
+      );
+    }
+
+    // Trigger 6: the page mentions a watched name next to a well-known
+    // place that is NOT one of the user's places — the writer is
+    // looking for the user somewhere they are not located. Low-risk
+    // flag: logged, no alarm. Only the trigger is reported — never the
+    // name, never the place, and never any page content.
+    if (
+      matchesWatchedName(bodyText) &&
+      !matchesWatchedPlace(bodyText) &&
+      matchesKnownPlaceWord(bodyText)
+    ) {
+      report(
+        'place-low-risk',
+        'This page mentions one of the names the sentry watches for next to a place you do not use. Low risk — whoever wrote this does not know where you really are.',
       );
     }
   }

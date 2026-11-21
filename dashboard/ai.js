@@ -113,12 +113,21 @@ async function askCloud(text) {
   return parseVerdict(result.response.text());
 }
 
-// Triage one event. `event` is { kind, text, source, keepLocal? }.
+// Triage one event. `event` is { kind, text, source, keepLocal?, placeMatch? }.
 // `keepLocal` is set by the caller when the message contains one of
 // the user's watched names (see namewatch.js): the cloud tier is then
 // skipped entirely — a watched name never leaves the device.
-// ai.js never receives the watched-names list itself, only the message
-// being triaged, and only the message text is ever sent to the cloud.
+// `placeMatch` is set by the caller when the message contains a watched
+// name AND one of the user's places (see "My places" in namewatch.js):
+// any cue that puts your name together with your bank gets flagged.
+// A real message from your bank matches too — so the verdict is
+// UNCERTAIN, not SUSPICIOUS, with one remedy: open the real app or type
+// the real address yourself, never tap the link. A place match also
+// forces on-device-only triage, so the name-plus-place combination
+// never reaches the cloud.
+// ai.js never receives the watched-names or places lists itself, only
+// the message being triaged, and only the message text is ever sent to
+// the cloud.
 // Returns {
 //   verdict: 'SAFE' | 'SUSPICIOUS' | 'UNCERTAIN',
 //   route: 'ON-DEVICE' | 'CLOUD',
@@ -132,7 +141,70 @@ export async function triageEvent(event) {
   const first = heuristicVerdict(score);
 
   // Tier 1 — deterministic on-device scorer settles clear cases.
+  // Place match — checked BEFORE any SAFE verdict: a cue that puts
+  // your name together with one of your places is never waved through
+  // as safe. A real message from your bank matches too, so this is
+  // UNCERTAIN, not SUSPICIOUS — but it is flagged, forced on-device,
+  // and never sent to the cloud. The remedy is the whole point: go to
+  // the real app yourself.
+  if (event.placeMatch && first !== 'SUSPICIOUS') {
+    return {
+      verdict: 'UNCERTAIN',
+      route: 'ON-DEVICE',
+      tier: 'place-match',
+      confidence: 50,
+      score,
+      signals,
+      reasons: [
+        `This connects your name to one of your places (${event.placeMatch}). It could be your bank — or someone pretending to be it.`,
+      ],
+      remedy:
+        'Do not tap any link in it. Open the real app — or type the real address yourself — and check there.',
+      note: 'Kept on-device because it connects your name to one of your places. Verify through the real app.',
+      ms: Math.round(performance.now() - started),
+    };
+  }
+
+  // Low-risk flag — checked before any plain SAFE verdict: a watched
+  // name next to a place you do NOT use. The writer is looking for you
+  // somewhere you are not located, so they are not privy to real
+  // information about you. Flagged and logged, but low risk: nothing
+  // to do.
+  if (event.placeUnknown && first === 'SAFE') {
+    return {
+      verdict: 'SAFE',
+      route: 'ON-DEVICE',
+      tier: 'place-low-risk',
+      confidence: 80,
+      score,
+      signals,
+      reasons: [
+        `Your name appeared next to ${event.placeUnknown} — a place you do not use. Whoever wrote this does not know where you really are.`,
+      ],
+      remedy: 'Nothing to do. Noted — the sentry keeps watching.',
+      note: 'Low-risk flag: your name was seen with a place you are not located at.',
+      ms: Math.round(performance.now() - started),
+    };
+  }
+
   if (first !== 'UNCERTAIN') {
+    const reasons = signals.filter((s) => s.weight > 0).map((s) => s.label);
+    // A clear threat that also names one of your places keeps its
+    // verdict — and gains the place note, so you know what it was
+    // reaching for.
+    if (first === 'SUSPICIOUS' && event.placeMatch) {
+      reasons.unshift(
+        `This connects your name to one of your places (${event.placeMatch}) — verify through the real app, never the link.`,
+      );
+    }
+    // A clear threat that names a place you do NOT use gains the
+    // low-risk note instead: whoever wrote this does not know where
+    // you really are — but the threat itself is still real.
+    if (first === 'SUSPICIOUS' && event.placeUnknown) {
+      reasons.unshift(
+        `Your name appeared next to ${event.placeUnknown} — a place you do not use. Whoever wrote this does not know where you really are.`,
+      );
+    }
     return {
       verdict: first,
       route: 'ON-DEVICE',
@@ -140,12 +212,14 @@ export async function triageEvent(event) {
       confidence: first === 'SUSPICIOUS' ? Math.min(99, score) : Math.max(70, 100 - score),
       score,
       signals,
-      reasons: signals.filter((s) => s.weight > 0).map((s) => s.label),
+      reasons,
       remedy: remedyFor(first),
       note: 'Settled on-device by the deterministic scorer. Nothing left the device.',
       ms: Math.round(performance.now() - started),
     };
   }
+
+  // Tier 2 — on-device model, only for uncertain events.
 
   // Tier 2 — on-device model, only for uncertain events.
   try {

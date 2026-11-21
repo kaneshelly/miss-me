@@ -107,12 +107,70 @@ Message:
   // Triage one event on-device. The extension never calls the cloud:
   // an UNCERTAIN result is flagged for the user, who can open the
   // dashboard for a cloud check.
+  // `event.placeMatch` is set by background.js when the text carries a
+  // watched name AND one of the user's places: any cue that puts your
+  // name together with your bank. A real message from your bank matches
+  // too, so the verdict is UNCERTAIN, not SUSPICIOUS — with one remedy:
+  // open the real app yourself, never tap the link.
   async function triageEvent(event) {
     const started = Date.now();
     const text = String(event.text || '');
     const { score, signals } = scoreEvent(text);
     const first = heuristicVerdict(score);
+    // Place match — checked BEFORE any SAFE verdict: a cue that puts
+    // your name together with one of your places is never waved
+    // through as safe. A real message from your bank matches too, so
+    // this is UNCERTAIN, not SUSPICIOUS — flagged, forced on-device,
+    // never sent to the cloud.
+    if (event.placeMatch && first !== 'SUSPICIOUS') {
+      return {
+        verdict: 'UNCERTAIN',
+        route: 'ON-DEVICE',
+        tier: 'place-match',
+        confidence: 50,
+        score,
+        signals,
+        reasons: [
+          'This connects your name to one of your places. It could be your bank — or someone pretending to be it.',
+        ],
+        remedy:
+          'Do not tap any link in it. Open the real app — or type the real address yourself — and check there.',
+        note: 'Kept on-device because it connects your name to one of your places. Verify through the real app.',
+        ms: Date.now() - started,
+      };
+    }
+    // Low-risk flag — checked before any plain SAFE verdict: a watched
+    // name next to a place you do NOT use. The writer is looking for
+    // you somewhere you are not located, so they are not privy to real
+    // information about you. Flagged and logged, but low risk.
+    if (event.placeUnknown && first === 'SAFE') {
+      return {
+        verdict: 'SAFE',
+        route: 'ON-DEVICE',
+        tier: 'place-low-risk',
+        confidence: 80,
+        score,
+        signals,
+        reasons: [
+          `Your name appeared next to ${event.placeUnknown} — a place you do not use. Whoever wrote this does not know where you really are.`,
+        ],
+        remedy: 'Nothing to do. Noted — the sentry keeps watching.',
+        note: 'Low-risk flag: your name was seen with a place you are not located at.',
+        ms: Date.now() - started,
+      };
+    }
     if (first !== 'UNCERTAIN') {
+      const reasons = signals.filter((s) => s.weight > 0).map((s) => s.label);
+      if (first === 'SUSPICIOUS' && event.placeMatch) {
+        reasons.unshift(
+          'This connects your name to one of your places — verify through the real app, never the link.',
+        );
+      }
+      if (first === 'SUSPICIOUS' && event.placeUnknown) {
+        reasons.unshift(
+          `Your name appeared next to ${event.placeUnknown} — a place you do not use. Whoever wrote this does not know where you really are.`,
+        );
+      }
       return {
         verdict: first,
         route: 'ON-DEVICE',
@@ -120,7 +178,7 @@ Message:
         confidence: first === 'SUSPICIOUS' ? Math.min(99, score) : Math.max(70, 100 - score),
         score,
         signals,
-        reasons: signals.filter((s) => s.weight > 0).map((s) => s.label),
+        reasons,
         remedy: remedyFor(first),
         note: 'Settled on-device. Nothing left the device.',
         ms: Date.now() - started,
@@ -159,5 +217,62 @@ Message:
     };
   }
 
-  return { scoreEvent, heuristicVerdict, triageEvent, THRESHOLDS };
+  // KNOWN_PLACE_WORDS — well-known banks and financial words, built in.
+  // Mirrors dashboard/namewatch.js. Low-risk branch: a watched name next
+  // to one of these, where the place is NOT one of the user's places,
+  // means the writer is looking for the user somewhere they are not
+  // located. Keep the three copies in sync (dashboard, here, content.js).
+  const KNOWN_PLACE_WORDS = [
+    'Capital One',
+    'Chase',
+    'Bank of America',
+    'Wells Fargo',
+    'Citibank',
+    'Citi',
+    'US Bank',
+    'PNC',
+    'Truist',
+    'TD Bank',
+    'American Express',
+    'Amex',
+    'Discover',
+    'Navy Federal',
+    'USAA',
+    'Ally Bank',
+    'Marcus',
+    'SoFi',
+    'PayPal',
+    'Venmo',
+    'Cash App',
+    'Zelle',
+    'credit union',
+    'crypto exchange',
+  ];
+
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function normalizePlace(s) {
+    return String(s || '').trim().replace(/\s+/g, ' ');
+  }
+
+  // First built-in place word in `text` that is NOT one of the user's
+  // own places, or null.
+  function findKnownPlaceWord(text, places) {
+    const input = String(text || '');
+    if (!input) return null;
+    const own = (places || []).map((p) => normalizePlace(p).toLowerCase());
+    for (const w of KNOWN_PLACE_WORDS) {
+      if (own.includes(w.toLowerCase())) continue;
+      if (w.length <= 3) {
+        if (new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(input)) return w;
+      } else if (input.toLowerCase().includes(w.toLowerCase())) {
+        return w;
+      }
+    }
+    return null;
+  }
+
+  return { scoreEvent, heuristicVerdict, triageEvent, findKnownPlaceWord, THRESHOLDS };
 })();

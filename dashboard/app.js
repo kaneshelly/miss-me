@@ -4,11 +4,14 @@
 import { triageEvent } from './ai.js';
 import { isFirebaseConfigured } from './firebase-config.js';
 import {
-  loadNameWatch,
+  loadWatch,
   saveNameWatch,
   suggestCoverName,
   normalizeVariant,
   findWatchedName,
+  findWatchedPlace,
+  findKnownPlaceWord,
+  savePlaces,
   COVER_NAMES,
 } from './namewatch.js';
 
@@ -81,7 +84,7 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function showVerdict(result, sourceText, matchedName) {
+function showVerdict(result, sourceText, matchedName, matchedPlace, placeUnknown) {
   const box = $('verdict');
   const cls = result.verdict === 'SAFE' ? 'safe' : result.verdict === 'SUSPICIOUS' ? 'suspicious' : 'uncertain';
   const headline =
@@ -102,11 +105,19 @@ function showVerdict(result, sourceText, matchedName) {
   const nameWatchNote = matchedName
     ? `<div class="namewatch-note"><strong>Name Watch:</strong> the sentry spotted one of your watched names in this message — “${escapeHtml(matchedName)}”. It kept this message on-device and did not send it to the cloud.</div>`
     : '';
+  const placeNote = matchedPlace
+    ? `<div class="namewatch-note"><strong>My places:</strong> this message connects your name to one of your places — “${escapeHtml(matchedPlace)}”. It could be the real place, or someone pretending to be it. Open the real app yourself — never tap the link.</div>`
+    : '';
+  const placeUnknownNote = placeUnknown
+    ? `<div class="namewatch-note"><strong>Low-risk flag:</strong> your name appeared next to “${escapeHtml(placeUnknown)}” — a place you do not use. Whoever wrote this does not know where you really are. Noted, nothing to do.</div>`
+    : '';
   box.className = 'verdict ' + cls;
   box.innerHTML =
     `<h3>${headline}<span class="badge ${result.route === 'CLOUD' ? 'cloud' : 'on-device'}">${result.route === 'CLOUD' ? 'CLOUD' : 'ON-DEVICE'}</span></h3>` +
     alert +
     nameWatchNote +
+    placeNote +
+    placeUnknownNote +
     reasons +
     `<p class="remedy"><strong>What to do:</strong> ${escapeHtml(result.remedy || '')}</p>` +
     `<p>${escapeHtml(result.note)}</p>` +
@@ -122,11 +133,26 @@ async function runTriage(kind, text) {
   // Name Watch: if the message carries a watched name, the sentry flags
   // it as a name-watch event and forces on-device-only triage — the
   // variants list and the message never reach the cloud.
+  // My places: if the message carries a watched name AND one of the
+  // user's places, it is a place-match event — any cue that puts your
+  // name together with your bank gets flagged, and the combination never
+  // reaches the cloud either.
   const matchedName = findWatchedName(text, nameWatch.variants);
-  const eventKind = matchedName ? 'name-watch' : kind;
-  const keepLocal = Boolean(matchedName);
+  const matchedPlace = matchedName ? findWatchedPlace(text, places) : null;
+  // Low-risk branch: a watched name next to a well-known place that is
+  // NOT one of the user's places — the writer is looking for the user
+  // somewhere they are not located.
+  const placeUnknown = matchedName && !matchedPlace ? findKnownPlaceWord(text, places) : null;
+  const eventKind = matchedPlace
+    ? 'place-match'
+    : placeUnknown
+      ? 'place-low-risk'
+      : matchedName
+        ? 'name-watch'
+        : kind;
+  const keepLocal = Boolean(matchedName || matchedPlace);
   try {
-    const result = await triageEvent({ kind: eventKind, text, source: 'dashboard', keepLocal });
+    const result = await triageEvent({ kind: eventKind, text, source: 'dashboard', keepLocal, placeMatch: matchedPlace, placeUnknown });
     events.unshift({
       kind: eventKind,
       text: text.length > 280 ? text.slice(0, 280) + '…' : text,
@@ -139,7 +165,7 @@ async function runTriage(kind, text) {
     });
     saveEvents();
     renderLog();
-    showVerdict(result, text, matchedName);
+    showVerdict(result, text, matchedName, matchedPlace, placeUnknown);
     if (result.route === 'CLOUD') {
       setStatus('ESCALATED', 'On-device checks could not settle it — the cloud sent back a notification and a suggested remedy.', 'escalated');
       $('engine-state').textContent = 'cloud check used (Firebase AI Logic) — verdict + remedy only';
@@ -196,11 +222,40 @@ $('clear-log').addEventListener('click', () => {
   goToSleep();
 });
 
+// ---- Storm the gate -----------------------------------------------------
+// A thief probes the app and the page reports what it found — counted from
+// what is actually stored, not from a script. Passwords, accounts and
+// payment details are always zero: the app never asks for or stores them.
+// Watched names and events are counted honestly, and shown as on-device
+// only — never sent anywhere.
+$('storm-btn').addEventListener('click', () => {
+  const box = $('storm-result');
+  const rows = [
+    ['Passwords', 0, 'never asked for, never stored, never read'],
+    ['Accounts', 0, 'there is no account to break into'],
+    ['Payment details', 0, 'no card on file'],
+    ['Names sent to the cloud', 0, 'watched names never leave this device'],
+    ['Events kept in this browser', events.length, 'on this device only — clearable any time'],
+    ['Watched names on this device', nameWatch.variants.length, 'on this device only — never sent anywhere'],
+  ];
+  box.classList.remove('hidden');
+  box.innerHTML =
+    `<h3>Storm report — what a thief would find: nothing.</h3>` +
+    `<ul>${rows.map(([label, n, note]) => `<li><strong>${escapeHtml(label)}:</strong> ${n} <span class="muted">— ${escapeHtml(note)}</span></li>`).join('')}</ul>` +
+    `<p><strong>Taken: nothing.</strong> The vault is empty by design — that is the protection.</p>`;
+});
+
 // ---- Name Watch setup ---------------------------------------------------
 // Variants and the cover name live in this browser only (localStorage).
-// They are never sent anywhere — see namewatch.js.
-
-let nameWatch = loadNameWatch();
+// They are never sent anywhere — see namewatch.js. The stored list is
+// the Gray Code: your real names hidden among about a hundred decoy
+// names, verifiable only on this device. `loadWatch` resolves the real
+// ones at startup; the UI shows only your real list.
+const watch = await loadWatch();
+let nameWatch = { variants: watch.variants, coverName: watch.coverName };
+let nameEntryCount = watch.nameEntryCount;
+let places = watch.places;
+let placeEntryCount = watch.placeEntryCount;
 // Index into COVER_NAMES for the suggestion on screen. Derived from the
 // first variant when the list changes; "Suggest another" steps it along.
 let coverIdx = null;
@@ -230,10 +285,10 @@ function renderNameWatch() {
       btn.type = 'button';
       btn.className = 'ghost';
       btn.textContent = 'Remove';
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         nameWatch.variants = nameWatch.variants.filter((x) => x !== v);
         coverIdx = null;
-        saveNameWatch(nameWatch);
+        nameEntryCount = await saveNameWatch(nameWatch);
         renderNameWatch();
       });
       li.appendChild(span);
@@ -251,9 +306,15 @@ function renderNameWatch() {
       ? `Cover name in use: ${nameWatch.coverName}. The sentry safeguards everything under this name.`
       : 'No cover name set yet.';
   }
+  // The Gray Code, in plain sight: your names are hidden among the
+  // mixed store's syllable fragments, and only this device can tell which are yours.
+  $('nw-hidden-line').textContent =
+    nameEntryCount > 0
+      ? `Hidden among ${nameEntryCount} syllable fragments in the store — every fragment looks the same, and only this device can tell which are yours.`
+      : '';
 }
 
-function addVariantFromInput() {
+async function addVariantFromInput() {
   const v = normalizeVariant($('variant-input').value);
   if (v.length < 2) {
     $('variant-input').focus();
@@ -262,7 +323,7 @@ function addVariantFromInput() {
   if (!nameWatch.variants.includes(v)) {
     nameWatch.variants.push(v);
     coverIdx = null;
-    saveNameWatch(nameWatch);
+    nameEntryCount = await saveNameWatch(nameWatch);
   }
   $('variant-input').value = '';
   renderNameWatch();
@@ -274,16 +335,16 @@ $('variant-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') addVariantFromInput();
 });
 
-$('use-cover').addEventListener('click', () => {
+$('use-cover').addEventListener('click', async () => {
   nameWatch.coverName = currentSuggestion();
-  saveNameWatch(nameWatch);
+  nameEntryCount = await saveNameWatch(nameWatch);
   renderNameWatch();
 });
 $('new-cover').addEventListener('click', () => {
   coverIdx = (coverIdx + 1) % COVER_NAMES.length;
   $('cover-suggestion').textContent = COVER_NAMES[coverIdx];
 });
-$('save-cover').addEventListener('click', () => {
+$('save-cover').addEventListener('click', async () => {
   const v = normalizeVariant($('cover-input').value);
   if (v.length < 2) {
     $('cover-input').focus();
@@ -291,11 +352,73 @@ $('save-cover').addEventListener('click', () => {
   }
   nameWatch.coverName = v;
   $('cover-input').value = '';
-  saveNameWatch(nameWatch);
+  nameEntryCount = await saveNameWatch(nameWatch);
   renderNameWatch();
 });
 
 renderNameWatch();
+
+// ---- My places ----------------------------------------------------------
+// Where the user lives online — their bank, their email, anywhere their
+// name and their money meet. Stored on this device only, never sent
+// anywhere. Any cue that puts a watched name together with a watched
+// place gets flagged as a place-match event. The stored list is the gray
+// coat: your real places hidden among about a hundred decoy banks and
+// portals, verifiable only on this device.
+function renderPlaces() {
+  const list = $('place-list');
+  list.innerHTML = '';
+  if (places.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No places yet. Add your bank, your email — anywhere your name and your money meet.';
+    list.appendChild(li);
+  } else {
+    for (const p of places) {
+      const li = document.createElement('li');
+      const span = document.createElement('span');
+      span.textContent = p;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost';
+      btn.textContent = 'Remove';
+      btn.addEventListener('click', async () => {
+        places = places.filter((x) => x !== p);
+        placeEntryCount = await savePlaces(places);
+        renderPlaces();
+      });
+      li.appendChild(span);
+      li.appendChild(btn);
+      list.appendChild(li);
+    }
+  }
+  $('pl-hidden-line').textContent =
+    placeEntryCount > 0
+      ? `Hidden among ${placeEntryCount} syllable fragments in the store — banks and portals, all random-looking, and only this device can tell which are yours.`
+      : '';
+}
+
+async function addPlaceFromInput() {
+  const v = normalizeVariant($('place-input').value);
+  if (v.length < 2) {
+    $('place-input').focus();
+    return;
+  }
+  if (!places.includes(v)) {
+    places.push(v);
+    placeEntryCount = await savePlaces(places);
+  }
+  $('place-input').value = '';
+  renderPlaces();
+  $('place-input').focus();
+}
+
+$('add-place').addEventListener('click', addPlaceFromInput);
+$('place-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addPlaceFromInput();
+});
+
+renderPlaces();
 
 // Cloud status line.
 if (isFirebaseConfigured()) {

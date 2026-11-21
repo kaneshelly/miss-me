@@ -35,15 +35,33 @@
   </section>
 
   <section class="card">
+    <h2>Nothing to steal</h2>
+    <p><strong>What MISS-ME holds: nothing worth taking.</strong> A sentry that holds your passwords is a vault a thief can rob. This one holds none of it.</p>
+    <ul class="holds-list">
+      <li><strong>No passwords.</strong> It never asks for one, never stores one, and never reads what you type — it only notices when a page asks you to type one somewhere unsafe.</li>
+      <li><strong>No accounts. No payment details.</strong> There is no account to break into and no card on file.</li>
+      <li><strong>Your names never leave this device.</strong> Watched names live in this browser only. A message carrying one never goes to the cloud.</li>
+      <li><strong>The cloud only ever sees an uncertain message</strong> — never a watched name — and only sends back a short verdict and a remedy.</li>
+      <li><strong>The event log lives in this browser only</strong> — and you can clear it any time.</li>
+    </ul>
+    <p class="muted">Don’t take our word for it — storm the gate and see what a thief would find.</p>
+    <div class="button-row">
+      <button id="storm-btn" type="button">Storm the gate</button>
+    </div>
+    <div id="storm-result" class="storm-result hidden" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
     <h2>Name Watch — setup</h2>
-    <p>List every variation of your name — every spelling, every way someone could search for you — and the sentry will watch for those names. The sentry will also suggest a cover name to keep your information under.</p>
-    <p class="muted">Name Watch lives on this device only. Your variants are stored in this browser and never leave it — they are never sent to the cloud, and a message carrying a watched name is never sent to the cloud either.</p>
-    <label for="variant-input">A variation of your name</label>
+    <p>List the people the sentry guards — your name in every variation, and anyone else you protect: family, clients. The roster holds 50 people at a time, and if someone tries to get into any of their information, it gets flagged. The sentry will also suggest a cover name to keep your information under.</p>
+    <p class="muted">Name Watch lives on this device only. Your variants are stored in this browser and never leave it — they are never sent to the cloud, and a message carrying a watched name is never sent to the cloud either. And they are not stored plain, or whole: at setup the app breaks your names into syllables and mixes them in with decoy syllables, each at its own binary position on the lattice, so anyone who opens the store sees fragments and cannot tell which are yours.</p>
+    <label for="variant-input">A name to guard — yours, family, a client</label>
     <div class="inline-row">
       <input id="variant-input" type="text" placeholder="e.g. a nickname, a maiden name, a misspelling" autocomplete="off">
       <button id="add-variant" type="button">Add</button>
     </div>
     <ul id="variant-list" class="variant-list"></ul>
+    <p id="nw-hidden-line" class="muted"></p>
     <div id="cover-box" class="cover-box hidden">
       <p><strong>Suggested cover name:</strong> <span id="cover-suggestion"></span></p>
       <div class="button-row">
@@ -57,6 +75,19 @@
       </div>
       <p class="muted" id="cover-status"></p>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>My places</h2>
+    <p>Tell the sentry where you live online — your bank, your email, anywhere your name and your money meet. Any cue that puts your name together with one of your places gets flagged, so you can check it through the real app instead of a link.</p>
+    <p class="muted">My places live on this device only, like your watched names. They are never sent anywhere — and a message that matches your name and a place never goes to the cloud either. And they are not stored plain, or whole: at setup the app breaks your places into syllables and mixes them in with decoy syllables, each at its own binary position on the lattice, so anyone who opens the store sees fragments and cannot tell which are yours.</p>
+    <label for="place-input">A place where your name and your money meet</label>
+    <div class="inline-row">
+      <input id="place-input" type="text" placeholder="e.g. your bank, your email provider" autocomplete="off">
+      <button id="add-place" type="button">Add</button>
+    </div>
+    <ul id="place-list" class="variant-list"></ul>
+    <p id="pl-hidden-line" class="muted"></p>
   </section>
 
   <section class="card">
