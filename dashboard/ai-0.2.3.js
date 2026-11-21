@@ -128,7 +128,15 @@ async function askCloud(text) {
     cloudModel = getGenerativeModel(ai, {
       mode: InferenceMode.PREFER_IN_CLOUD,
       inCloudParams: {
-        model: 'gemini-3.8-flash',
+        // Model: gemini-3.5-flash-lite. gemini-3.8-flash is the current
+        // flagship Flash, but it kept answering 429 / "high demand" in
+        // the live tests of 2026-11-20 (its free-tier pool is the one
+        // everybody hammers). Google's own guidance names 3.5-flash-lite
+        // as the lightweight current fallback, and a short JSON triage
+        // verdict is exactly what a Lite model is for. (gemini-2.5-flash
+        // is NOT an option: Google limits it to projects that already
+        // used it, and this project never has — it would 404.)
+        model: 'gemini-3.5-flash-lite',
         generationConfig: { responseMimeType: 'application/json' },
       },
     });
