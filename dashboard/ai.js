@@ -116,15 +116,30 @@ async function askCloud(text) {
       isTokenAutoRefreshEnabled: true,
     });
     const ai = getAI(app, { backend: new GoogleAIBackend() });
+    // Hybrid mode: the model name lives inside inCloudParams, not at the
+    // top level — the SDK ignores a top-level `model` here and throws
+    // "Must provide a model name" (caught by the live test, 2026-11-20).
     cloudModel = getGenerativeModel(ai, {
-      model: 'gemini-2.0-flash',
       mode: InferenceMode.PREFER_IN_CLOUD,
       inCloudParams: {
+        model: 'gemini-3.8-flash',
         generationConfig: { responseMimeType: 'application/json' },
       },
     });
   }
-  const result = await cloudModel.generateContent(CLOUD_PROMPT + text + '\n"""');
+  // The cloud check must never leave the user staring at a stale verdict.
+  // Live test 2026-11-20: with App Check's token exchange unreachable the
+  // call hung 90s+ and the grey sample never resolved. 20s, then the
+  // sentry falls back to UNCERTAIN on-device.
+  const CLOUD_TIMEOUT_MS = 20000;
+  const call = cloudModel.generateContent(CLOUD_PROMPT + text + '\n"""');
+  call.catch(() => {}); // no unhandled rejection if the timeout wins first
+  const result = await Promise.race([
+    call,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Cloud check timed out after 20s')), CLOUD_TIMEOUT_MS)
+    ),
+  ]);
   return parseVerdict(result.response.text());
 }
 
