@@ -27,11 +27,12 @@ miss-me/
 │   ├── index.html        Status, "Trip the sentry" demo panel, event log
 │   ├── styles.css
 │   ├── app.js            Page wiring
-│   ├── ai.js             The hybrid inference layer (the three tiers)
+│   ├── ai-0.2.3.js       The hybrid inference layer (the three tiers)
+│   ├── ai.js             Re-export stub — points at ai-0.2.3.js
 │   ├── namewatch.js      Name Watch + My places: watched names, cover names, watched places
 │   ├── decoys.js         Gray Code: decoy pools, keyed salts, device key
 │   ├── syllables.js      Gray Code, second layer: syllables, binary lattice positions, reassembly
-│   └── firebase-config.js  Placeholder config — fill in yours (see below)
+│   └── firebase-config.js  Live web config for the hosted demo (web key restricted to our domains — see below). Forks: replace it with your own.
 ├── extension/            Chrome extension (Manifest V3)
 │   ├── manifest.json
 │   ├── background.js     The sentry: sleeps until a trigger arrives
@@ -114,7 +115,7 @@ Then open http://localhost:8000/dashboard/ in Chrome.
 
 The dashboard calls Firebase AI Logic at runtime (`getAI`, `getGenerativeModel`, `GoogleAIBackend`, `InferenceMode` from `firebase/ai`) only for Tier 3 checks. Never commit real keys for a production project to a public repo; keep App Check on and restrict the key to your own domains when you ship.
 
-**App Check** is registered for this project (web app "MISS-ME dashboard", reCAPTCHA v3, provider shown as Fraud Defense in the current console; site key `6Lcz3CouAAAAAGqqa8nDsTJ_KguJ5LzGoU5f4TNl`). The dashboard initializes it in `ai.js` before the first cloud call — Firebase AI Logic enforces it, so Tier 3 would be blocked without it. Enforcement is off for the other APIs; local testing uses a debug token (the SDK prints it to the console — register it in the Firebase console under App Check).
+**App Check** is registered for this project (web app "MISS-ME dashboard", reCAPTCHA Enterprise — provider shown as Fraud Defense in the current console; site key `6Lcz3CouAAAAAGqqa8nDsTJ_KguJ5LzGoU5f4TNl`). The dashboard initializes it in `ai-0.2.3.js` before the first cloud call — Firebase AI Logic enforces it, so Tier 3 would be blocked without it. Enforcement is off for the other APIs; local testing uses a debug token (the SDK prints it to the console — register it in the Firebase console under App Check).
 
 ## Demo script (for the video, about 90 seconds)
 
